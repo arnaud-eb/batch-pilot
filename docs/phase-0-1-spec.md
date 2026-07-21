@@ -94,8 +94,24 @@ BatchPilot is a Shopify app that lets a merchant describe a bulk catalog change 
   `shop { name }` query costs 1. Section 3's backoff should read `extensions.cost.throttleStatus`
   from each response rather than assuming a fixed request/sec limit.
 - **Store currency is USD**, not EUR — see currency decision before seeding.
-- Admin API version: GraphiQL defaults to `2026-07`; the app's webhooks pin `2026-10`.
-  Pin the wrapper layer explicitly so dev and runtime agree.
+- Admin API version: the app pins `ApiVersion.July26` (`2026-07`) in `app/shopify.server.ts`, which
+  matches GraphiQL's default. The `2026-10` in `shopify.app.toml` is the _webhook_ API version, a
+  separate setting — not a mismatch. Wrapper layer pins `2026-07` to match the app.
+- `expiringOfflineAccessTokens: true` is enabled, so offline tokens (`shpua_…`) expire and carry a
+  refresh token. Scripts reading the stored session must fail loudly on expiry, not emit bare 401s.
+  Observed live: the app's offline token expires ~60 minutes after issue and only refreshes when the
+  app is loaded in the admin — too fragile for a long script run. The seed/test scripts therefore
+  prefer a stable custom-app token (`shpat_…`) from `.env`, falling back to the offline session.
+- **Legacy custom apps**: as of 2026-01-01 merchants can't create new legacy custom apps, but
+  Partners still can on a non-transferred dev store — which is how the `shpat_` seed token was made.
+- **`productSet` collapses seeding to one call per product** — product + options + variants +
+  per-variant inventory in a single mutation (~20 cost). It requires `optionValues` on _every_
+  variant, including single-variant products, which take the default `Title` / `Default Title` value.
+- **Serial calls never trip the throttle.** The 600-product seed ran at ~0.7s/call and the bucket
+  never dropped below ~1980/2000, because 100/sec restore outpaces a single serial caller. The
+  deliberate rate-limit test in Section 3 must fire _concurrent_ requests to actually trigger backoff.
+- Dev stores auto-add products to a default `Home page` collection the seed script never assigns.
+  Section 3's collection filter must expect membership it didn't create.
 - Scopes granted: `write_products`, `write_inventory`, `read_locations`, `write_metaobjects`,
   `write_metaobject_definitions`. Dev stores auto-grant, so no consent screen.
 - `shopify app dev` fires `APP_UNINSTALLED` on startup and reinstalls, clearing the Prisma session table.
