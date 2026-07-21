@@ -75,11 +75,11 @@ BatchPilot is a Shopify app that lets a merchant describe a bulk catalog change 
 
 ## Definition of done for Phase 0-1
 
-- [ ] App installs and runs against a Partner dev store
-- [ ] Seed script populates 500+ messy products
-- [ ] All four tool wrapper functions implemented, typed, and tested against real API calls
-- [ ] Rate-limit handling verified (intentionally trigger it once to confirm backoff works) — confirmed in scope as part of the Section 3 test suite; run against the dev store with seed data
-- [ ] Everything committed to a GitHub repo with a README describing setup steps
+- [x] App installs and runs against a Partner dev store
+- [x] Seed script populates 500+ messy products (600 verified live)
+- [x] All four tool wrapper functions implemented, typed, and tested against real API calls
+- [x] Rate-limit handling verified (intentionally trigger it once to confirm backoff works) — concurrent-burst test trips the throttle and asserts recovery
+- [x] Everything committed to a GitHub repo with a README describing setup steps
 
 ## Notes for Claude Code
 
@@ -112,6 +112,11 @@ BatchPilot is a Shopify app that lets a merchant describe a bulk catalog change 
   deliberate rate-limit test in Section 3 must fire _concurrent_ requests to actually trigger backoff.
 - Dev stores auto-add products to a default `Home page` collection the seed script never assigns.
   Section 3's collection filter must expect membership it didn't create.
+- **Search index is eventually consistent.** `products(query: "tag:…")` is backed by an async search
+  index: a just-created product is not findable by tag/inventory search for a short lag, though it is
+  immediately readable by `product(id:)` (strongly consistent). Mutation wrappers verify via id reads;
+  the read wrapper (`queryProducts`) is tested against the already-indexed seed catalog. Phase 2's
+  dry-run must not create-then-query-by-tag and expect fresh results — read back by id, or tolerate lag.
 - Scopes granted: `write_products`, `write_inventory`, `read_locations`, `write_metaobjects`,
   `write_metaobject_definitions`. Dev stores auto-grant, so no consent screen.
 - `shopify app dev` fires `APP_UNINSTALLED` on startup and reinstalls, clearing the Prisma session table.

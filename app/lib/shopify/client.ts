@@ -49,7 +49,14 @@ export interface ClientOptions {
   maxRetries?: number;
   /** Injectable for tests so retry logic doesn't actually sleep. */
   sleep?: (ms: number) => Promise<void>;
+  /** Fires when the client proactively waits for the bucket to refill. */
   onThrottleWait?: (info: { waitMs: number; status: ThrottleStatus }) => void;
+  /**
+   * Fires when Shopify actually throttled a request and the client is retrying.
+   * Distinct from onThrottleWait (which is self-pacing before spending): this
+   * means we hit the real limit. The deliberate rate-limit test asserts on it.
+   */
+  onThrottle?: (info: { attempt: number; reason: "http_429" | "http_430" | "graphql_throttled" }) => void;
 }
 
 const defaultSleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
@@ -61,6 +68,7 @@ export class ShopifyClient {
   private readonly maxRetries: number;
   private readonly sleep: (ms: number) => Promise<void>;
   private readonly onThrottleWait?: ClientOptions["onThrottleWait"];
+  private readonly onThrottle?: ClientOptions["onThrottle"];
 
   /** Last known bucket state, updated from every response. */
   private throttle: ThrottleStatus | null = null;
@@ -74,6 +82,7 @@ export class ShopifyClient {
     this.maxRetries = opts.maxRetries ?? 5;
     this.sleep = opts.sleep ?? defaultSleep;
     this.onThrottleWait = opts.onThrottleWait;
+    this.onThrottle = opts.onThrottle;
   }
 
   /** Current bucket state, or null before the first response. */
@@ -150,6 +159,7 @@ export class ShopifyClient {
 
       // 430 is Shopify's "shop is over its limit"; 429 is standard throttling.
       if (res.status === 429 || res.status === 430) {
+        this.onThrottle?.({ attempt: attempt + 1, reason: res.status === 429 ? "http_429" : "http_430" });
         const retryAfterMs = retryAfterFromHeader(res) ?? backoffMs(attempt + 1);
         if (attempt++ >= this.maxRetries) {
           throw new RateLimitedError(
@@ -188,6 +198,7 @@ export class ShopifyClient {
         // THROTTLED arrives as a 200 with a GraphQL error, not an HTTP status.
         const throttled = body.errors.some((e) => e.extensions?.code === "THROTTLED");
         if (throttled) {
+          this.onThrottle?.({ attempt: attempt + 1, reason: "graphql_throttled" });
           const waitMs = this.throttle
             ? Math.ceil(((estimatedCost + this.reserve) / this.throttle.restoreRate) * 1000)
             : backoffMs(attempt + 1);
