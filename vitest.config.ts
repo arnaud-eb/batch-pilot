@@ -5,7 +5,7 @@ export default defineConfig({
     // Integration tests hit the real dev store, so they need node + real time
     // and generous timeouts (a throttled call can wait seconds for the bucket).
     environment: "node",
-    include: ["app/lib/shopify/**/*.test.ts", "scripts/**/*.test.ts"],
+    include: ["app/lib/**/*.test.ts", "scripts/**/*.test.ts"],
     testTimeout: 60_000,
     hookTimeout: 60_000,
     // Run test FILES serially. The deliberate throttle test drains the store's

@@ -14,6 +14,7 @@
     "setup": "prisma generate && prisma migrate deploy",
     "lint": "eslint --ignore-path .gitignore --cache --cache-location ./node_modules/.cache/eslint .",
     "seed": "tsx scripts/seed/index.ts",
+    "diff:demo": "tsx scripts/diff-demo.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "shopify": "shopify",
