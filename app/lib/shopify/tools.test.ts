@@ -158,12 +158,24 @@ describe("queryProducts", () => {
     expect(hit.variants.length).toBeGreaterThan(0);
   });
 
-  it("signals hasMore when more products match than the limit returns", async () => {
-    // The seed catalog has hundreds of bp-seed products, so a tiny limit is
-    // guaranteed to be truncated — hasMore must say so, and the page respects
-    // the cap exactly.
+  it("signals hasMore when truncation happens mid-page", async () => {
+    // The common case: limit smaller than a page, so the cut falls inside the
+    // first page of results. (Note: this case alone does NOT exercise the
+    // page-boundary bug — see the next test.)
     const { products, hasMore } = await queryProducts(client, { tag: "bp-seed", limit: 3 });
     expect(products).toHaveLength(3);
+    expect(hasMore).toBe(true);
+  });
+
+  it("signals hasMore at a page boundary (limit == the 100-per-page fetch size)", async () => {
+    // Regression guard for the boundary bug fixed during review: when the
+    // limit-th match is the LAST product on its page, naive
+    // `while (results.length < limit)` pagination exits without looking at the
+    // next page and reports hasMore=false even though more matched. Verified
+    // against the store that the pre-fix algorithm returned false here while the
+    // over-fetch-by-one fix returns true. Requires >100 bp-seed products (600).
+    const { products, hasMore } = await queryProducts(client, { tag: "bp-seed", limit: 100 });
+    expect(products).toHaveLength(100);
     expect(hasMore).toBe(true);
   });
 
