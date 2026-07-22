@@ -145,10 +145,10 @@ describe("addTags", () => {
 // lag. The seed products (tag:bp-seed) have long since been indexed.
 describe("queryProducts", () => {
   it("finds seeded products by tag and returns the typed shape", async () => {
-    const found = await queryProducts(client, { tag: "bp-seed", limit: 5 });
+    const { products } = await queryProducts(client, { tag: "bp-seed", limit: 5 });
 
-    expect(found.length).toBeGreaterThan(0);
-    const hit = found[0];
+    expect(products.length).toBeGreaterThan(0);
+    const hit = products[0];
     expect(typeof hit.id).toBe("string");
     expect(typeof hit.title).toBe("string");
     expect(hit.price).toMatch(/^\d+\.\d{2}$/);
@@ -158,34 +158,57 @@ describe("queryProducts", () => {
     expect(hit.variants.length).toBeGreaterThan(0);
   });
 
-  it("applies a price ceiling client-side", async () => {
-    const found = await queryProducts(client, { tag: "bp-seed", priceMax: 40, limit: 50 });
+  it("signals hasMore when more products match than the limit returns", async () => {
+    // The seed catalog has hundreds of bp-seed products, so a tiny limit is
+    // guaranteed to be truncated — hasMore must say so, and the page respects
+    // the cap exactly.
+    const { products, hasMore } = await queryProducts(client, { tag: "bp-seed", limit: 3 });
+    expect(products).toHaveLength(3);
+    expect(hasMore).toBe(true);
+  });
 
-    expect(found.length).toBeGreaterThan(0);
-    for (const p of found) {
+  it("reports hasMore false when the whole matching set fits", async () => {
+    const uniqueTag = "bp-seed";
+    const { products, hasMore } = await queryProducts(client, { tag: uniqueTag, limit: 100000 });
+    expect(products.length).toBeGreaterThan(0);
+    expect(hasMore).toBe(false);
+  });
+
+  it("applies a price ceiling client-side", async () => {
+    const { products } = await queryProducts(client, { tag: "bp-seed", priceMax: 40, limit: 50 });
+
+    expect(products.length).toBeGreaterThan(0);
+    for (const p of products) {
       expect(Number(p.price)).toBeLessThanOrEqual(40);
     }
   });
 
   it("applies a price floor client-side", async () => {
-    const found = await queryProducts(client, { tag: "bp-seed", priceMin: 100, limit: 50 });
+    const { products } = await queryProducts(client, { tag: "bp-seed", priceMin: 100, limit: 50 });
 
-    for (const p of found) {
+    for (const p of products) {
       expect(Number(p.price)).toBeGreaterThanOrEqual(100);
     }
   });
 
   it("returns min variant price for multi-variant products", async () => {
     // Pull a decent sample and confirm the reported price is the variant min.
-    const found = await queryProducts(client, { tag: "bp-seed", limit: 100 });
-    const multi = found.find((p) => p.variants.length > 1);
+    const { products } = await queryProducts(client, { tag: "bp-seed", limit: 100 });
+    const multi = products.find((p) => p.variants.length > 1);
     expect(multi, "seed catalog should contain multi-variant products").toBeDefined();
     const min = Math.min(...multi!.variants.map((v) => Number(v.price)));
     expect(Number(multi!.price)).toBe(min);
   });
 
-  it("returns an empty list for a tag that matches nothing", async () => {
-    const found = await queryProducts(client, { tag: `bp-test-none-${Date.now()}` });
-    expect(found).toEqual([]);
+  it("rejects a malformed collectionId", async () => {
+    await expect(
+      queryProducts(client, { collectionId: "not-a-gid" }),
+    ).rejects.toBeInstanceOf(ValidationError);
+  });
+
+  it("returns an empty set for a tag that matches nothing", async () => {
+    const { products, hasMore } = await queryProducts(client, { tag: `bp-test-none-${Date.now()}` });
+    expect(products).toEqual([]);
+    expect(hasMore).toBe(false);
   });
 });

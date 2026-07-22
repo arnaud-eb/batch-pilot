@@ -119,7 +119,7 @@ agent will call in Phase 3.
 
 | Function                       | Purpose                                                     |
 | ------------------------------ | ----------------------------------------------------------- |
-| `queryProducts(client, f)`     | Search by price range, stock, tag, collection → typed list  |
+| `queryProducts(client, f)`     | Search by price range, stock, tag, collection → `{ products, hasMore }` |
 | `updateProduct(client, id, c)` | Update product fields (title, tags — tags **replace**)      |
 | `updateVariant(client, id, c)` | Update variant fields (price, compareAtPrice)               |
 | `addTags(client, id, tags)`    | Add tags, **merging** with existing ones (never clobbers)   |

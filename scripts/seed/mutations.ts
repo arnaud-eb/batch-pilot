@@ -10,6 +10,7 @@
 
 import { ShopifyClient, assertNoUserErrors } from "../../app/lib/shopify/client";
 import { NotFoundError } from "../../app/lib/shopify/errors";
+import { escapeSearchValue } from "../../app/lib/shopify/tools";
 import type { SeedProduct } from "./generate";
 
 /** Namespaced so it can't collide with the realistic tag pool. */
@@ -50,7 +51,7 @@ export async function ensureCollection(client: ShopifyClient, title: string): Pr
     `query FindCollection($q: String!) {
        collections(first: 1, query: $q) { nodes { id title } }
      }`,
-    { q: `title:'${title.replace(/'/g, "\\'")}'` },
+    { q: `title:'${escapeSearchValue(title)}'` },
     { estimatedCost: 5 },
   );
 

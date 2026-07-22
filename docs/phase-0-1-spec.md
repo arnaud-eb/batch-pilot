@@ -122,3 +122,30 @@ BatchPilot is a Shopify app that lets a merchant describe a bulk catalog change 
 - `shopify app dev` fires `APP_UNINSTALLED` on startup and reinstalls, clearing the Prisma session table.
 - The CLI does not rewrite `application_url` in the local toml; tunnel URLs are updated app-side only.
   No `.env` is written to disk — credentials are injected by the CLI at runtime.
+
+## Post-review decisions (five-axis review of Sections 1-3)
+
+Applied in Phase 0-1:
+
+- **`queryProducts` returns `{ products, hasMore }`.** A capped result set is no longer silently
+  indistinguishable from a complete one — `hasMore` is true when more products matched than `limit`
+  returned. Phase 2's diff preview must check it: presenting a truncated set as "everything that
+  matches" would make an approved bulk edit wrong.
+- Backslashes are now escaped in search-string values (one canonical `escapeSearchValue` helper,
+  reused by `queryProducts` and the seed's `ensureCollection`); a malformed `collectionId` is rejected
+  with `ValidationError` rather than injected raw. Verified against the live API: single-quote escaping
+  already prevented search-operator breakout, so this is robustness, not a closed vulnerability.
+
+Deliberate evolutions deferred to later phases (decisions, not defects):
+
+- **Price is evaluated per-product (min variant) in Phase 0-1; per-variant belongs in the Phase 2 diff
+  layer.** "Products under €40" currently matches a product whose _cheapest_ variant is ≤ 40, which can
+  sweep along that product's €55 variant. The honest semantic — "which variants match" — is a diff-layer
+  concern: it consumes the full `variants` array `queryProducts` already returns and previews
+  "3 of 5 variants match". `queryProducts`' `priceMin/priceMax` therefore remain min-variant filters and
+  should be read as "the product has a variant near this bound", not "every variant qualifies".
+- **Restrictive price filters still page the whole catalog** (price isn't evaluated server-side), so a
+  filter matching little reads every page. Acceptable at dev-store scale; revisit if `queryProducts`
+  gets called with tight price filters over large catalogs in Phase 3.
+- **The deliberate-throttle test asserts `throttleEvents > 0` off a fixed 50-request burst** — passing
+  but load-dependent. If it ever flakes, switch it to loop-until-throttled instead of a fixed burst.
