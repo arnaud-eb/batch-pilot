@@ -123,7 +123,7 @@ An adversarial verifier probed the diff engine against the live store. Outcomes:
 - [x] Price/filter semantics are per-variant, tested against a straddling fixture (`Urban  Mug 40`, seed catalog)
 - [x] Diff computation is provably pure (no side effects), re-reads by id to avoid stale search results
 - [x] Diff computation never silently proceeds on a truncated (`hasMore: true`) result set — paginates fully or throws
-- [ ] Execution engine runs serially by default, re-verifies each mutation, continues past partial failures
+- [x] Execution engine runs serially by default, re-verifies each mutation, continues past partial failures (20-item batch + independent-query test; teeth-proven against a lying engine)
 - [ ] Every run and every line-item change is logged to SQLite
 - [ ] Rollback works end-to-end on a real executed run, verified by direct query afterward
 - [ ] Sections 1-2 committed with tests, zero mocks (Sections 3-4 pending checkpoint approval)
