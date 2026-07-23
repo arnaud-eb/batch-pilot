@@ -89,6 +89,67 @@ export async function createScratchProduct(
   return { id: product.id, variantId: product.variants.nodes[0].id, title: opts.title };
 }
 
+/**
+ * Create a synthetic product with at least `minVariants` variants, to exercise
+ * code paths that only trigger past the 100-variant read cap. The data is not
+ * realistic — two options whose cartesian product crosses the threshold — it
+ * exists only to cross it. Returns the product id; delete with
+ * deleteScratchProduct. Tagged TEST_MARKER_TAG so cleanup never hits seed data.
+ */
+export async function createManyVariantProduct(
+  client: ShopifyClient,
+  minVariants: number,
+): Promise<{ id: string; variantCount: number }> {
+  // Choose factor counts whose product is ≥ minVariants (e.g. 15×7 = 105).
+  const betaCount = 7;
+  const alphaCount = Math.ceil(minVariants / betaCount);
+  const alpha = Array.from({ length: alphaCount }, (_, i) => `a${i + 1}`);
+  const beta = Array.from({ length: betaCount }, (_, i) => `b${i + 1}`);
+  const variants = alpha.flatMap((a) =>
+    beta.map((b) => ({
+      price: "1.00",
+      optionValues: [
+        { optionName: "Alpha", name: a },
+        { optionName: "Beta", name: b },
+      ],
+    })),
+  );
+
+  const { data } = await client.request<{
+    productSet: {
+      product: { id: string; variantsCount: { count: number } | null } | null;
+      userErrors: Array<{ field: string[] | null; message: string }>;
+    };
+  }>(
+    `mutation ($input: ProductSetInput!) {
+       productSet(input: $input, synchronous: true) {
+         product { id variantsCount { count } }
+         userErrors { field message }
+       }
+     }`,
+    {
+      input: {
+        title: `BP VERIFY ${variants.length}-variant fixture`,
+        status: "DRAFT",
+        tags: [TEST_MARKER_TAG],
+        productOptions: [
+          { name: "Alpha", values: alpha.map((name) => ({ name })) },
+          { name: "Beta", values: beta.map((name) => ({ name })) },
+        ],
+        variants,
+      },
+    },
+    { estimatedCost: 200 },
+  );
+
+  const errs = data.productSet.userErrors;
+  if (errs.length) {
+    throw new Error(`many-variant fixture setup failed: ${errs.map((e) => e.message).join("; ")}`);
+  }
+  const product = data.productSet.product!;
+  return { id: product.id, variantCount: product.variantsCount?.count ?? variants.length };
+}
+
 export async function deleteScratchProduct(client: ShopifyClient, id: string): Promise<void> {
   await client.request(
     `mutation ($input: ProductDeleteInput!) {

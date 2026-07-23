@@ -7,11 +7,15 @@
  * across reseeds. That is the Section 1 acceptance fixture.
  */
 
-import { beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { ShopifyClient } from "../shopify/client";
 import { ValidationError } from "../shopify/errors";
-import { makeClient } from "../shopify/test-helpers";
-import { computeDiff } from "./compute";
+import {
+  createManyVariantProduct,
+  deleteScratchProduct,
+  makeClient,
+} from "../shopify/test-helpers";
+import { computeDiff, readProductsByIds } from "./compute";
 import type { ChangeRequest } from "./types";
 
 // The straddler, from the seed catalog. If the seed changes, refind it.
@@ -157,6 +161,36 @@ describe("computeDiff — purity (Section 2 acceptance)", () => {
     expect(second.summary).toEqual(first.summary);
     expect(second.entries).toEqual(first.entries);
     expect(second.matches).toEqual(first.matches);
+  });
+});
+
+describe("readProductsByIds — >100-variant refusal (finding #2)", () => {
+  // The guard lives in the re-read step. We create a real synthetic product
+  // with >100 variants and pass its id straight to readProductsByIds — that is
+  // exactly where the guard sits, and passing the id directly sidesteps the
+  // unrelated search-index lag (a fresh product isn't tag-searchable yet).
+  let fixtureId: string | null = null;
+  let fixtureVariantCount = 0;
+
+  beforeAll(async () => {
+    const fixture = await createManyVariantProduct(client, 101);
+    fixtureId = fixture.id;
+    fixtureVariantCount = fixture.variantCount;
+  }, 60_000);
+
+  afterAll(async () => {
+    if (fixtureId) await deleteScratchProduct(client, fixtureId);
+  });
+
+  it("created a fixture that actually exceeds the 100-variant read cap", () => {
+    // Guards the guard's precondition: if this ever drops to ≤100, the refusal
+    // test below would pass vacuously (nothing to truncate).
+    expect(fixtureVariantCount).toBeGreaterThan(100);
+  });
+
+  it("refuses (throws) rather than silently truncating a >100-variant product", async () => {
+    await expect(readProductsByIds(client, [fixtureId!])).rejects.toBeInstanceOf(ValidationError);
+    await expect(readProductsByIds(client, [fixtureId!])).rejects.toThrow(/more than 100.*variants/i);
   });
 });
 

@@ -105,8 +105,10 @@ An adversarial verifier probed the diff engine against the live store. Outcomes:
   €40.00 variant now guards this (it fails on the old inclusive code).
 - **Variant-count guard added (finding #2).** A product with >100 variants now makes
   the diff _refuse_ rather than silently drop variants 101+ — the same discipline as
-  the product-level `hasMore` refusal. Not exercised by seed data (max 5 variants);
-  defensive for real catalogs / combined listings.
+  the product-level `hasMore` refusal. Verified against a real synthetic 105-variant
+  fixture (the store does allow >100 variants): the guard throws, and the test was
+  proven to fail when the guard is removed (it silently returns a 100-variant
+  truncation), so it distinguishes guarded from unguarded rather than passing green.
 - **Collection titles resolve case-insensitively (finding #3).** The old strict `===`
   rejected a real collection on any case difference; matters for Phase 3's NL titles.
 - **Candidate order is now deterministic** (sorted by numeric id before re-read), so the

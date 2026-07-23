@@ -31,7 +31,7 @@ import type {
 } from "./types";
 
 /** Authoritative product state, read fresh by id. */
-interface FreshProduct {
+export interface FreshProduct {
   id: string;
   title: string;
   tags: string[];
@@ -261,7 +261,7 @@ const VARIANT_READ_CAP = 100;
  * and misstate "M of N", which is the exact silent-partial-preview the engine
  * refuses at the product level via hasMore. Same discipline, one level down.
  */
-async function readProductsByIds(
+export async function readProductsByIds(
   client: ShopifyClient,
   ids: string[],
 ): Promise<FreshProduct[]> {
