@@ -94,6 +94,28 @@ type ChangeRequest = {
 
 ---
 
+## Post-verification decisions (adversarial review of computeDiff)
+
+An adversarial verifier probed the diff engine against the live store. Outcomes:
+
+- **Price bounds are a half-open interval `[priceMin, priceMax)`.** `priceMax` is
+  EXCLUSIVE (price < priceMax), matching this spec's "price < 40" wording — 4 real
+  seed variants priced exactly €40.00 were being repriced under the old inclusive
+  behaviour. `priceMin` is INCLUSIVE (price ≥ priceMin). A boundary test with a real
+  €40.00 variant now guards this (it fails on the old inclusive code).
+- **Variant-count guard added (finding #2).** A product with >100 variants now makes
+  the diff *refuse* rather than silently drop variants 101+ — the same discipline as
+  the product-level `hasMore` refusal. Not exercised by seed data (max 5 variants);
+  defensive for real catalogs / combined listings.
+- **Collection titles resolve case-insensitively (finding #3).** The old strict `===`
+  rejected a real collection on any case difference; matters for Phase 3's NL titles.
+- **Candidate order is now deterministic** (sorted by numeric id before re-read), so the
+  purity guarantee no longer relies on Shopify's undocumented default sort being stable.
+- **Untracked inventory (finding #4) — documented, not fixed.** A variant with
+  `inventoryQuantity: null` is treated as stock 0, so `stockMin ≥ 1` excludes it.
+  Untracked arguably means "unlimited". No seed variant is untracked, so there is
+  nothing to test against yet — revisit when a real catalog needs it.
+
 ## Definition of done for Phase 2
 
 - [x] Price/filter semantics are per-variant, tested against a straddling fixture (`Urban  Mug 40`, seed catalog)

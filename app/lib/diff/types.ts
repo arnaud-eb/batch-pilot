@@ -14,11 +14,18 @@
  */
 export interface ChangeRequest {
   filter: {
-    /** Match variants whose price is ≤ this. Evaluated per-variant. */
+    /**
+     * Match variants strictly below this price (EXCLUSIVE: price < priceMax).
+     * "Under €40" → priceMax: 40 excludes a €40.00 variant. Per-variant.
+     */
     priceMax?: number;
-    /** Match variants whose price is ≥ this. Evaluated per-variant. */
+    /**
+     * Match variants at or above this price (INCLUSIVE: price >= priceMin).
+     * With priceMax this forms a half-open interval [priceMin, priceMax).
+     * Per-variant.
+     */
     priceMin?: number;
-    /** Match variants whose on-hand stock is ≥ this. Evaluated per-variant. */
+    /** Match variants whose on-hand stock is ≥ this (inclusive). Per-variant. */
     stockMin?: number;
     /** Match products carrying this tag (product-level, server-side). */
     tag?: string;

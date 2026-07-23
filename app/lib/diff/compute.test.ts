@@ -55,6 +55,39 @@ describe("computeDiff — per-variant price semantics (Section 1)", () => {
     expect(touchesOverForty).toBe(false);
   });
 
+  it("excludes a variant priced exactly at priceMax (exclusive upper bound)", async () => {
+    // The seed catalog has 4 variants priced exactly 40.00 (Bold Notebook 354,
+    // Bold Tote Bag 405 ×2, minimal sticker pack 444). Under "price < 40" they
+    // must NOT be touched. This test fails on the old inclusive (≤) behaviour
+    // and passes on the exclusive (<) behaviour — it actually distinguishes them.
+    const diff = await computeDiff(client, {
+      filter: { tag: "bp-seed", priceMax: 40 },
+      change: { setPrice: 9.99 },
+    });
+    const touchesForty = diff.entries.filter(
+      (e) => e.field === "price" && e.oldValue === "40.00",
+    );
+    expect(touchesForty).toHaveLength(0);
+  });
+
+  it("includes a variant priced exactly at priceMin (inclusive lower bound)", async () => {
+    // Half-open [40, 41): 40.00 is included, and the exclusive upper keeps out
+    // anything ≥ 41. So a 40.00 variant must appear.
+    const diff = await computeDiff(client, {
+      filter: { tag: "bp-seed", priceMin: 40, priceMax: 41 },
+      change: { setPrice: 9.99 },
+    });
+    const includesForty = diff.entries.some(
+      (e) => e.field === "price" && e.oldValue === "40.00",
+    );
+    expect(includesForty).toBe(true);
+    // And nothing at/above the exclusive upper bound sneaks in.
+    const atOrAboveUpper = diff.entries.some(
+      (e) => e.field === "price" && Number(e.oldValue) >= 41,
+    );
+    expect(atOrAboveUpper).toBe(false);
+  });
+
   it("emits no entry when the matched variant already has the target price", async () => {
     // setPrice equals the under-40 variant's current price → no-op, no entry.
     const diff = await computeDiff(client, {
@@ -87,6 +120,27 @@ describe("computeDiff — product-level changes over matched products", () => {
       expect(newTags.filter((t) => t === "bp-seed")).toHaveLength(1);
       expect(newTags.length).toBe(oldTags.length + 1);
     }
+  });
+});
+
+describe("computeDiff — collection resolution", () => {
+  it("resolves a collection title case-insensitively", async () => {
+    // Real collection is "Summer Essentials"; a lower-case request must resolve
+    // it rather than throwing (finding #3). Kept cheap with a no-op-ish change.
+    const diff = await computeDiff(client, {
+      filter: { collection: "summer essentials", priceMax: 40 },
+      change: { addTags: ["diff-demo"] },
+    });
+    expect(diff.matches.length).toBeGreaterThan(0);
+  });
+
+  it("throws on a collection title that does not exist in any case", async () => {
+    await expect(
+      computeDiff(client, {
+        filter: { collection: "no such collection at all" },
+        change: { addTags: ["x"] },
+      }),
+    ).rejects.toBeInstanceOf(ValidationError);
   });
 });
 

@@ -79,10 +79,11 @@ async function main() {
     for (const line of renderProduct(diff, m.productId)) console.log(line);
   }
 
-  // A quick integrity line: every price entry's variant really was ≤ 40.
+  // A quick integrity line: every price entry's variant really was < 40
+  // (priceMax is exclusive), so a €40.00 variant must never appear.
   const priceEntries = diff.entries.filter((e: DiffEntry) => e.field === "price");
-  const allUnder40 = priceEntries.every((e) => Number(e.oldValue) <= 40);
-  console.log(`\nINTEGRITY CHECK: all ${priceEntries.length} price changes were on variants ≤ €40 → ${allUnder40 ? "PASS" : "FAIL"}`);
+  const allUnder40 = priceEntries.every((e) => Number(e.oldValue) < 40);
+  console.log(`\nINTEGRITY CHECK: all ${priceEntries.length} price changes were on variants < €40 → ${allUnder40 ? "PASS" : "FAIL"}`);
 }
 
 main().catch((err) => {

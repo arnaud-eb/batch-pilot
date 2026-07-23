@@ -63,7 +63,12 @@ export async function computeDiff(
   options: ComputeDiffOptions = {},
 ): Promise<DiffResult> {
   const candidateIds = await selectCandidateIds(client, request, options.maxCandidates ?? MAX_CANDIDATES);
-  const fresh = await readProductsByIds(client, candidateIds);
+  // Sort candidates deterministically before re-reading so the diff's entry
+  // order does not depend on Shopify's (undocumented) default product sort
+  // being stable across calls — the purity guarantee should be contractual,
+  // not incidental.
+  const orderedIds = sortByNumericId(candidateIds);
+  const fresh = await readProductsByIds(client, orderedIds);
 
   const entries: DiffEntry[] = [];
   const matches: ProductMatch[] = [];
@@ -149,13 +154,27 @@ export async function computeDiff(
   };
 }
 
-/** A variant matches when it satisfies every price/stock bound present. */
+/**
+ * A variant matches when it satisfies every price/stock bound present.
+ *
+ * Price bounds form a HALF-OPEN interval [priceMin, priceMax):
+ *   - priceMax is EXCLUSIVE (price < priceMax) so "under €40" (priceMax: 40)
+ *     does not touch a €40.00 variant — matching the spec §1 wording "price < 40".
+ *   - priceMin is INCLUSIVE (price >= priceMin) so "at least €40" (priceMin: 40)
+ *     does include a €40.00 variant.
+ * stockMin is inclusive (stock >= stockMin).
+ *
+ * NOTE (finding #4, documented not fixed): a variant with untracked inventory
+ * arrives here as stock 0 (see readProductsByIds), so stockMin >= 1 excludes it.
+ * Untracked arguably means "unlimited", not zero — revisit when a real catalog
+ * with untracked variants exists to test against.
+ */
 function variantMatches(
   variant: { price: string; stock: number },
   filter: ChangeRequest["filter"],
 ): boolean {
   const price = Number(variant.price);
-  if (filter.priceMax !== undefined && price > filter.priceMax) return false;
+  if (filter.priceMax !== undefined && price >= filter.priceMax) return false;
   if (filter.priceMin !== undefined && price < filter.priceMin) return false;
   if (filter.stockMin !== undefined && variant.stock < filter.stockMin) return false;
   return true;
@@ -196,27 +215,51 @@ async function selectCandidateIds(
   return products.map((p) => p.id);
 }
 
-/** Resolve a collection title to its gid; throws if no such collection exists. */
+/** Order gids by their trailing numeric id so entry order is deterministic. */
+function sortByNumericId(ids: string[]): string[] {
+  const key = (gid: string) => Number(gid.split("/").pop() ?? 0);
+  return [...ids].sort((a, b) => key(a) - key(b));
+}
+
+/**
+ * Resolve a collection title to its gid; throws if no such collection exists.
+ *
+ * Matches case-insensitively (finding #3): Shopify's title search is already
+ * case-insensitive, so a strict `===` filter would reject a real collection on
+ * any case difference — neither reliable matching nor reliable rejection. An
+ * exact-case hit is preferred when several titles differ only by case.
+ */
 async function resolveCollectionId(client: ShopifyClient, title: string): Promise<string> {
   const { data } = await client.request<{
     collections: { nodes: Array<{ id: string; title: string }> };
   }>(
     `query FindCollection($q: String!) {
-       collections(first: 5, query: $q) { nodes { id title } }
+       collections(first: 10, query: $q) { nodes { id title } }
      }`,
     { q: `title:'${title.replace(/\\/g, "\\\\").replace(/'/g, "\\'")}'` },
     { estimatedCost: 5 },
   );
-  const match = data.collections.nodes.find((c) => c.title === title);
+  const nodes = data.collections.nodes;
+  const match =
+    nodes.find((c) => c.title === title) ??
+    nodes.find((c) => c.title.toLowerCase() === title.toLowerCase());
   if (!match) {
     throw new ValidationError(`No collection titled "${title}"`, [], { title });
   }
   return match.id;
 }
 
+/** Highest number of variants read per product; see the refusal below. */
+const VARIANT_READ_CAP = 100;
+
 /**
  * Re-read products by id for authoritative current state (quirk #1). Batches ids
  * through nodes() so a large candidate set doesn't blow the query cost budget.
+ *
+ * Refuses (finding #2) rather than silently truncating a product with more than
+ * VARIANT_READ_CAP variants: dropping variants 101+ would under-report matches
+ * and misstate "M of N", which is the exact silent-partial-preview the engine
+ * refuses at the product level via hasMore. Same discipline, one level down.
  */
 async function readProductsByIds(
   client: ShopifyClient,
@@ -234,6 +277,7 @@ async function readProductsByIds(
             tags: string[];
             variants: {
               nodes: Array<{ id: string; title: string; price: string; inventoryQuantity: number | null }>;
+              pageInfo: { hasNextPage: boolean };
             };
           }
         | null
@@ -245,7 +289,10 @@ async function readProductsByIds(
              id
              title
              tags
-             variants(first: 100) { nodes { id title price inventoryQuantity } }
+             variants(first: ${VARIANT_READ_CAP}) {
+               nodes { id title price inventoryQuantity }
+               pageInfo { hasNextPage }
+             }
            }
          }
        }`,
@@ -257,6 +304,15 @@ async function readProductsByIds(
       // A candidate can vanish between search and re-read (deleted, or the
       // search index was stale). Skip it — it simply isn't in the diff.
       if (!node) continue;
+      if (node.variants.pageInfo.hasNextPage) {
+        throw new ValidationError(
+          `Product ${node.id} ("${node.title}") has more than ${VARIANT_READ_CAP} ` +
+            `variants; the diff cannot preview it safely without dropping variants. ` +
+            `Variant pagination is not yet supported.`,
+          [],
+          { productId: node.id },
+        );
+      }
       out.push({
         id: node.id,
         title: node.title,
