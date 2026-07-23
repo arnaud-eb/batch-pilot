@@ -104,7 +104,7 @@ An adversarial verifier probed the diff engine against the live store. Outcomes:
   behaviour. `priceMin` is INCLUSIVE (price ≥ priceMin). A boundary test with a real
   €40.00 variant now guards this (it fails on the old inclusive code).
 - **Variant-count guard added (finding #2).** A product with >100 variants now makes
-  the diff *refuse* rather than silently drop variants 101+ — the same discipline as
+  the diff _refuse_ rather than silently drop variants 101+ — the same discipline as
   the product-level `hasMore` refusal. Not exercised by seed data (max 5 variants);
   defensive for real catalogs / combined listings.
 - **Collection titles resolve case-insensitively (finding #3).** The old strict `===`
